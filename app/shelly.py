@@ -1,6 +1,9 @@
 import os
 import httpx
+import time
+from .state import app
 from dotenv import load_dotenv
+from .database import log_error
 
 load_dotenv()
 
@@ -25,6 +28,7 @@ async def check_shelly():
         return False
 
     except Exception as e:
+        await log_error(e)
         print(f"Shelly connection failed: {e}")
         return False
 
@@ -37,6 +41,9 @@ async def set_state(state: bool):
 
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
+
+    if response.status_code == 200 and not state:
+        app.state.shelly_off_timestamp = time.monotonic()
 
     return response.status_code == 200
 
