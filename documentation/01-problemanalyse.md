@@ -21,7 +21,7 @@ Casen er ikke enestående. Den illustrerer dermed det mønster, som Eurostat-tal
 ### 1.3 Problemformulering og afgrænsing
 Hvordan kan ikke-smarte husholdningsapparater styres ud fra både elprisen og brugerens faktiske behov?
 
-Projektet afgrænses til en ikke-smart affugter. Vi undersøger, om det er muligt at få den til automatisk at tænde og slukke baseret på elprisen og fugtighedsniveauet i rummet — uden at ændre på selve apparatet.
+Projektet afgrænses til en ikke-smart affugter (eeese, model: Emil 2508). Vi undersøger, om det er muligt at få den til automatisk at tænde og slukke baseret på elprisen og fugtighedsniveauet i rummet — uden at ændre på selve apparatet.
 
 
 ### Reference:
