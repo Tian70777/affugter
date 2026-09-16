@@ -1,7 +1,7 @@
 # app/main.py
 
-from contextlib import asynccontextmanager
 import asyncio
+from contextlib import asynccontextmanager
 from .state import app
 from fastapi import FastAPI
 from .sensors import router as sensor_router
