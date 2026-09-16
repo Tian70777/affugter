@@ -1,7 +1,12 @@
 import asyncio
-from .database import save_state
+import board
+import adafruit_dht
+import time
+from datetime import datetime, timedelta, time as datetime_time
+from .database import save_state, log_error
 from .shelly import set_state, get_state
-from .database import get_latest_humidity, get_current_electricity_price
+from .database import get_latest_humidity, get_current_electricity_price, save_humidity
+from .electricity import fetch_electricity_price
 from .state import app
 
 """
@@ -11,8 +16,13 @@ Server-based: The server runs its own loop, calling price API and receiving humi
 """
 
 MIN_HUMIDITY = 45
-MAX_HUMIDITY = 55
+# MAX_HUMIDITY = 55 ikke nyttig?
 EMERGENCY_THRESHOLD = 70
+
+DARK_TIME_SLEEP = 22
+DARK_TIME_WAKE = 6
+
+SHELLY_RESTART_DELAY = 900  # 15 minutes
 
 
 async def determine_state(humidity, electricity_price):
@@ -20,19 +30,77 @@ async def determine_state(humidity, electricity_price):
     threshold = app.state.threshold
 
     current_state = await get_state()
-    desired_state = current_state
-
-    # humidity is below emergency threshold, operates normally
-    if humidity < EMERGENCY_THRESHOLD and humidity > MIN_HUMIDITY:
-        desired_state = electricity_price <= threshold
-
-    # humidity is above emergency threshold and runs regardless of price
-    if humidity >= EMERGENCY_THRESHOLD:
-        desired_state = True
 
     # humidity is below minimum threshold and switches off
     if humidity <= MIN_HUMIDITY:
         desired_state = False
+        reason = f"Humidity {humidity}% below minimum threshold " f"{MIN_HUMIDITY}%"
+
+    # humidity is above emergency threshold and runs regardless of price
+    elif humidity >= EMERGENCY_THRESHOLD:
+        desired_state = True
+        reason = (
+            f"Emergency threshold crossed: humidity {humidity}% >= "
+            f"{EMERGENCY_THRESHOLD}%"
+        )
+
+    # humidity is between minimum and maximum threshold, operates normally
+    elif humidity >= MIN_HUMIDITY and humidity < EMERGENCY_THRESHOLD:
+        if electricity_price <= threshold:
+            desired_state = True
+            reason = (
+                f"Humidity {humidity}% is within range, and "
+                f"electricity price {electricity_price} DKK/kWh "
+                f"is below threshold {threshold} DKK/kWh"
+            )
+        else:
+            desired_state = False
+            reason = (
+                f"Humidity {humidity}% within range, but "
+                f"electricity price {electricity_price} DKK/kWh "
+                f"is above threshold {threshold} DKK/kWh"
+            )
+
+    else:
+        desired_state = electricity_price <= threshold
+
+        if desired_state:
+            reason = (
+                f"Humidity {humidity}% is between minimum and maximum "
+                f"thresholds and electricity price {electricity_price} "
+                f"DKK/kWh is below threshold {threshold} DKK/kWh"
+            )
+        else:
+            reason = (
+                f"Humidity {humidity}% is between minimum and maximum "
+                f"thresholds and electricity price {electricity_price} "
+                f"DKK/kWh is above threshold {threshold} DKK/kWh"
+            )
+    # compressor lockout prevents the dehumidifier from restarting for 15 minutes after being switched off
+    if (
+        not current_state
+        and desired_state
+        and app.state.shelly_off_timestamp is not None
+    ):
+        elapsed = time.monotonic() - app.state.shelly_off_timestamp
+
+        if elapsed < SHELLY_RESTART_DELAY:
+            desired_state = False
+            remaining = SHELLY_RESTART_DELAY - elapsed
+            reason = f"Compressor lockout active: " f"{remaining:.0f} seconds remaining"
+
+    # sets dark time, within which the plug will never switch on
+    current_time = datetime.now().time()
+    dark_time = current_time >= datetime_time(
+        DARK_TIME_SLEEP, 0
+    ) or current_time < datetime_time(DARK_TIME_WAKE, 0)
+
+    if dark_time:
+        desired_state = False
+        reason = (
+            f"Dark time active: current time {current_time.strftime('%H:%M')}"
+            f"is between 22:00 and 06:00"
+        )
 
     print(
         f"Humidity: {humidity}% | "
@@ -42,45 +110,25 @@ async def determine_state(humidity, electricity_price):
         f"Desired state: {'ON' if desired_state else 'OFF'}"
     )
 
-    reason = ""
+    print(f"Reason: {reason}")
 
-    # if desired_state != current_state:
+    if desired_state != current_state:
+        print("Changing Shelly state...")
 
-    if humidity >= MAX_HUMIDITY:
-        if electricity_price <= threshold:
-            desired_state = True
-            reason = (
-                f"Humidity {humidity}% above maximum threshold and "
-                f"electricity price {electricity_price} DKK/kWh "
-                f"is below threshold {threshold} DKK/kWh"
+        shelly_result = await set_state(desired_state)
+
+        print(f"set_state returned: {shelly_result!r}")
+
+        if shelly_result:
+            await save_state(desired_state, reason)
+
+            print(
+                f"TURNED "
+                f"{'ON' if desired_state else 'OFF'}: "
+                f"{reason}"
             )
         else:
-            desired_state = False
-            reason = (
-                f"Humidity {humidity}% above maximum threshold but "
-                f"electricity price {electricity_price} DKK/kWh "
-                f"is above threshold {threshold} DKK/kWh"
-            )
-
-    if humidity >= EMERGENCY_THRESHOLD:
-        desired_state = True
-        reason = (
-            f"Emergency threshold crossed: humidity {humidity}% >= "
-            f"{EMERGENCY_THRESHOLD}%"
-        )
-
-    if humidity <= MIN_HUMIDITY:
-        desired_state = False
-        reason = f"Humidity {humidity}% below minimum threshold " f"{MIN_HUMIDITY}%"
-
-    print("Changing Shelly state...")
-
-    if await set_state(desired_state):
-        await save_state(desired_state, reason)
-
-        print(f"TURNED {'ON' if desired_state else 'OFF'}: {reason}")
-    else:
-        print("Failed to change Shelly state")
+            print("Failed to change Shelly state.")
 
     return {
         "humidity": humidity,
@@ -91,8 +139,9 @@ async def determine_state(humidity, electricity_price):
         "reason": reason,
     }
 
+
 # describes a loop for electricity price retrieval in a server-based context; not relevant in a server-inclusive context
-async def server_based_loop():
+async def server_based_loop_arduino():
     while True:
         try:
             humidity = await get_latest_humidity()
@@ -121,12 +170,73 @@ async def server_based_loop():
                     print("Failed to change Shelly state")
 
         except Exception as e:
+            await log_error(e)
             print(f"Server-based control failed: {e}")
 
         await asyncio.sleep(15 * 60)
 
 
 server_based_task = None
+
+
+# describes a loop for electricity price retrieval in a server-based context; not relevant in a server-inclusive context
+async def server_based_loop():
+    while True:
+        try:
+            humidity, temperature = await read_sensor()
+
+            print("Retrieving current electricity price...")
+
+            price = await get_current_electricity_price()
+
+            if price is None:
+                print("No electricity prices found in database. Fetching prices...")
+                await fetch_electricity_price()
+
+                print("Retrying current electricity price retrieval...")
+                price = await get_current_electricity_price()
+
+                if price is None:
+                    raise RuntimeError(
+                        "No electricity price available after fetching prices."
+                    )
+
+            result = await determine_state(
+                humidity,
+                price,
+            )
+
+            print(f"Price at timestamp {datetime.now()}: {price} DKK/kWh")
+
+            if result["desired_state"] != result["current_state"]:
+                print("Changing Shelly state...")
+
+                shelly_result = await set_state(result["desired_state"])
+
+                print(f"set_state returned: {shelly_result!r}")
+
+                if shelly_result:
+                    await save_state(result["desired_state"], result["reason"])
+
+                    print(
+                        f"TURNED "
+                        f"{'ON' if result['desired_state'] else 'OFF'}: "
+                        f"{result['reason']}"
+                    )
+                else:
+                    print("Failed to change Shelly state.")
+
+        except Exception as e:
+            await log_error(e)
+            print(f"Server-based control failed: {e}")
+            print(f"{type(e).__name__}: {repr(e)}")
+
+        now = datetime.now()
+        next_quarter = now.replace(second=0, microsecond=0) + timedelta(
+            minutes=15 - (now.minute % 15)
+        )
+
+        await asyncio.sleep((next_quarter - now).total_seconds())
 
 
 async def start_server_based_loop():
@@ -152,9 +262,39 @@ async def stop_server_based_loop():
 
     try:
         await server_based_task
-    except asyncio.CancelledError:
+    except asyncio.CancelledError as e:
+        await log_error(e)
         pass
 
     server_based_task = None
 
     return True
+
+
+dht = adafruit_dht.DHT11(board.D4)
+
+
+async def read_sensor(retries=5, delay=2):
+
+    for attempt in range(retries):
+        try:
+            humidity = dht.humidity
+            temperature = dht.temperature
+
+            if humidity is not None and temperature is not None:
+                print(
+                    f"Humidity: {humidity:.1f}% | " f"Temperature: {temperature:.1f} C"
+                )
+
+                await save_humidity(humidity, temperature)
+
+            return humidity, temperature
+
+        except RuntimeError as e:
+            await log_error(e)
+            print(f"Reading failed: {e}")
+
+        if attempt < retries - 1:
+            time.sleep(delay)
+
+    raise RuntimeError("Failed to read DHT11 after multiple attempts. ")

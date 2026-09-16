@@ -19,6 +19,15 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    devices:
+      - /dev/gpiochip0:/dev/gpiochip0
+      - /dev/gpiochip1:/dev/gpiochip1
+      - /dev/gpiomem:/dev/gpiomem
+    volumes:
+      - /proc/device-tree:/proc/device-tree:ro
+    environment:
+      BLINKA_FORCEBOARD: RASPBERRY_PI_4B
+      PYTHONUNBUFFERED: "1"
 
 volumes:
   postgres_data:

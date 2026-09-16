@@ -22,3 +22,15 @@ CREATE TABLE IF NOT EXISTS Humidifier_State (
 
 ALTER TABLE Humidity
 ADD COLUMN IF NOT EXISTS temperature NUMERIC;
+
+ALTER TABLE Electricity_Prices
+DROP COLUMN IF EXISTS Pris_inkl_VAT
+
+CREATE TABLE IF NOT EXISTS errors (
+    id SERIAL PRIMARY KEY,
+    error_type TEXT,
+    error_message TEXT NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE errors OWNER TO sascha;

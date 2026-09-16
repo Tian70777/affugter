@@ -22,6 +22,20 @@ async def get_connection():
         password=os.getenv("POSTGRES_PASSWORD"),
     )
 
+async def log_error(error):
+    conn = await get_connection()
+
+    async with conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                INSERT INTO errors (error_type, error_message)
+                VALUES (%s, %s)
+                """,
+                (type(error).__name__, str(error))
+            )
+        await conn.commit()
+
 
 async def save_humidity(percent, temperature):
     conn = await get_connection()
