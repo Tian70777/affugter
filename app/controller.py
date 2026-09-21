@@ -220,10 +220,6 @@ async def server_based_loop():
 
                 print(f"Price at timestamp {datetime.now()}: {price} DKK/kWh")
 
-            print(
-                f"Desired state: {result["desired_state"]} "
-                f"Current state: {result["current_state"]}"
-            )
             if result["desired_state"] != result["current_state"]:
                 print("Changing Shelly state...")
 
