@@ -139,75 +139,91 @@ async def determine_state(humidity, electricity_price):
         "reason": reason,
     }
 
+# allows continuous operation even if electricity price API is not available
+async def determine_state_without_price(humidity):
+    current_state = await get_state()
 
-# describes a loop for electricity price retrieval in a server-based context; not relevant in a server-inclusive context
-async def server_based_loop_arduino():
-    while True:
-        try:
-            humidity = await get_latest_humidity()
-            price = await get_current_electricity_price()
+    if humidity <= MIN_HUMIDITY:
+        desired_state = False
+        reason = (
+            f"Humidity {humidity}% is below minimum threshold "
+            f"{MIN_HUMIDITY}%; no electricity price available"
+        )
 
-            result = await determine_state(
-                humidity,
-                price,
-            )
+    elif humidity >= EMERGENCY_THRESHOLD: 
+        desired_state = True
+        reason = (
+            f"Emergency threshold crossed: humidity {humidity}% >= "
+            f"{EMERGENCY_THRESHOLD}%; no electricity price available"
+        )
 
-            if result["desired_state"] != result["current_state"]:
-                print("Changing Shelly state...")
+    else:
+        desired_state = False
+        reason = (
+            f"No electricity price available; "
+            f"humidity {humidity}% does not require emergency operation"
+        )
 
-                if await set_state(result["desired_state"]):
-                    await save_state(
-                        result["desired_state"],
-                        result["reason"],
-                    )
-
-                    print(
-                        f"TURNED "
-                        f"{'ON' if result['desired_state'] else 'OFF'}: "
-                        f"{result['reason']}"
-                    )
-                else:
-                    print("Failed to change Shelly state")
-
-        except Exception as e:
-            await log_error(e)
-            print(f"Server-based control failed: {e}")
-
-        await asyncio.sleep(15 * 60)
-
+    return {
+        "humidity": humidity,
+        "electricity_price": None,
+        "threshold": app.state.threshold,
+        "current_state": current_state,
+        "desired_state": desired_state,
+        "reason": reason,
+    }
 
 server_based_task = None
-
 
 # describes a loop for electricity price retrieval in a server-based context; not relevant in a server-inclusive context
 async def server_based_loop():
     while True:
         try:
             humidity, temperature = await read_sensor()
+            price = None
 
             print("Retrieving current electricity price...")
 
-            price = await get_current_electricity_price()
+            try:
+                price = await get_current_electricity_price()
+            except Exception as e:
+                await log_error(e)
+                print("Retrieving electricity price from database has failed.")
 
             if price is None:
                 print("No electricity prices found in database. Fetching prices...")
-                await fetch_electricity_price()
+
+                try:
+                    await fetch_electricity_price()
+                except Exception as e:
+                    await log_error(e)
+                    print(f"Electricity price fetch failed: {e}")
 
                 print("Retrying current electricity price retrieval...")
-                price = await get_current_electricity_price()
+                try:
+                    price = await get_current_electricity_price()
+                except Exception as e:
+                    await log_error(e)
+                    print("Retry has failed.")
 
-                if price is None:
-                    raise RuntimeError(
-                        "No electricity price available after fetching prices."
-                    )
+            if price is None:
+                print("Running without API data.")
+                result = await determine_state_without_price(humidity)
 
-            result = await determine_state(
-                humidity,
-                price,
+            else: 
+                print(f"Price retrieved sucessfully: {price}")
+
+                result = await determine_state(
+                    humidity,
+                    price,
+                )
+
+                print(f"Price at timestamp {datetime.now()}: {price} DKK/kWh")
+
+            print(
+                f"Desired state: {result["desired_state"]} "
+                f"Current state: {result["current_state"]}"
             )
-
-            print(f"Price at timestamp {datetime.now()}: {price} DKK/kWh")
-
             if result["desired_state"] != result["current_state"]:
                 print("Changing Shelly state...")
 

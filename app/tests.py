@@ -72,8 +72,10 @@ async def main():
             f"http://localhost:8000/debug/test/{endpoint}"
         )
 
-        print(response.json())
-
+        try: 
+            print(response.json())
+        except ValueError:
+            print(response.text or "<empty response body>")
 
 if __name__ == "__main__":
     asyncio.run(main())
