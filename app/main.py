@@ -1,5 +1,5 @@
 # app/main.py
-
+import os
 import asyncio
 from contextlib import asynccontextmanager
 from .state import app
@@ -9,7 +9,8 @@ from .debug_router import router as debug_router
 from .shelly import check_shelly
 from .electricity import fetch_electricity_price
 from .database import get_daily_threshold, log_error
-from .controller import server_based_loop
+from .controller import server_based_loop, dht11_feeder
+from .zigbee import listen_zigbee
 
 """
 App lifespan
@@ -48,6 +49,14 @@ async def lifespan(app: FastAPI):
     server_based_task = asyncio.create_task(
         server_based_loop()
     )
+    # start only the sensor feeders THIS location has (from its .env)
+    if os.getenv("ENABLE_ZIGBEE", "false").lower() == "true":
+        asyncio.create_task(listen_zigbee())
+        print("Zigbee catcher started.")
+
+    if os.getenv("ENABLE_DHT11", "false").lower() == "true":
+        asyncio.create_task(dht11_feeder())
+        print("DHT11 feeder started.")
 
     try:
         yield

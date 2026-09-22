@@ -1,7 +1,7 @@
 import os
 import psycopg
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 
@@ -37,17 +37,17 @@ async def log_error(error):
         await conn.commit()
 
 
-async def save_humidity(percent, temperature):
+async def save_humidity(percent, temperature, source="dht11"):
     conn = await get_connection()
 
     async with conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                INSERT INTO Humidity (percent, temperature)
-                VALUES (%s, %s)
+                INSERT INTO Humidity (percent, temperature, source)
+                VALUES (%s, %s, %s)
                 """,
-                (percent, temperature),
+                (percent, temperature, source),
             )
 
 
@@ -186,3 +186,40 @@ async def get_daily_threshold(percentile=0.25):
         )
 
     return threshold
+
+# How old a reading may be before we stop trusting it (seconds)
+MAX_AGE = {"zigbee": 1800, "dht11": 180}   # zigbee sleeps; dht11 reports often
+PRIORITY = ["zigbee", "dht11"]             # try zigbee first, then dht11
+
+
+async def _latest_for_source(source):
+    """Newest (percent, temperature, timestamp) for one source, or None."""
+    conn = await get_connection()
+    async with conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT percent, temperature, timestamp
+                FROM Humidity
+                WHERE source = %s
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """,
+                (source,),
+            )
+            return await cur.fetchone()
+
+
+async def get_current_humidity():
+    """Pick the freshest trustworthy sensor.
+    Returns (humidity, source) or (None, None) if everything is stale."""
+    now = datetime.now(timezone.utc)
+    for source in PRIORITY:
+        row = await _latest_for_source(source)
+        if row is None:
+            continue                       # this sensor never reported -> skip
+        percent, temperature, ts = row
+        age = (now - ts).total_seconds()
+        if age < MAX_AGE[source]:
+            return float(percent), source  # fresh enough -> trust it!
+    return None, None                      # nobody had a fresh reading

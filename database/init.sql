@@ -23,8 +23,15 @@ CREATE TABLE IF NOT EXISTS Humidifier_State (
 ALTER TABLE Humidity
 ADD COLUMN IF NOT EXISTS temperature NUMERIC;
 
+-- Zigbee integration: mark which sensor each reading came from.
+-- Existing rows default to 'dht11' so nothing breaks; the MQTT catcher
+-- will insert new rows stamped 'zigbee'.
+ALTER TABLE Humidity
+ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'dht11';
+
+
 ALTER TABLE Electricity_Prices
-DROP COLUMN IF EXISTS Pris_inkl_VAT
+DROP COLUMN IF EXISTS Pris_inkl_VAT;
 
 CREATE TABLE IF NOT EXISTS errors (
     id SERIAL PRIMARY KEY,
