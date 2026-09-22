@@ -23,3 +23,9 @@ Tian går i gang med at skrive kravspec
 Sascha syg, arbejder hjemmefra
 
 Standup og møde om hvilke processer der skal dokumenteres, samt forskel på weekend- og hverdagskørsel
+
+## 17-09-2026
+
+Sascha fortsat hjemmefra
+
+Standup
