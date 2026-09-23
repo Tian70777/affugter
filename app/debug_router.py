@@ -16,7 +16,7 @@ PAGES_DIR = Path(__file__).resolve().parent / "pages"
 
 router = APIRouter(prefix="/debug")
 
-@router.get("", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
 async def debug_page():
     return (PAGES_DIR / "debug.html").read_text()
 
