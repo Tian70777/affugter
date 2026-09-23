@@ -7,6 +7,17 @@ from .database import (
 )
 from .controller import determine_state, start_server_based_loop, stop_server_based_loop
 from .shelly import set_state
+from pathlib import Path
+
+from fastapi import APIRouter
+from fastapi.responses import HTMLResponse
+
+PAGES_DIR = Path(__file__).resolve().parent / "pages"
+
+
+@router.get("", response_class=HTMLResponse)
+async def debug_page():
+    return (PAGES_DIR / "debug.html").read_text()
 
 
 router = APIRouter(prefix="/debug")
