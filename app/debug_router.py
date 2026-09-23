@@ -14,13 +14,11 @@ from fastapi.responses import HTMLResponse
 
 PAGES_DIR = Path(__file__).resolve().parent / "pages"
 
+router = APIRouter(prefix="/debug")
 
 @router.get("", response_class=HTMLResponse)
 async def debug_page():
     return (PAGES_DIR / "debug.html").read_text()
-
-
-router = APIRouter(prefix="/debug")
 
 '''
 Endpoints for debugging
