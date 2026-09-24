@@ -10,6 +10,7 @@ from .shelly import check_shelly
 from .electricity import fetch_electricity_price
 from .database import get_daily_threshold, log_error
 from .controller import server_based_loop
+from app.dashboard import router as dashboard_router
 
 """
 App lifespan
@@ -59,3 +60,4 @@ app.router.lifespan_context = lifespan
 
 app.include_router(sensor_router)
 app.include_router(debug_router)
+app.include_router(dashboard_router)
