@@ -1,0 +1,935 @@
+<!-- app/pages/dashboard.html -->
+
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>Affugter Dashboard</title>
+
+    <script
+        src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js">
+    </script>
+
+    <style>
+        :root {
+            --background: #0f1720;
+            --card: #1b2733;
+            --text: #e7eef5;
+            --muted: #8aa0b2;
+            --border: #2b3a49;
+            --blue: #4aa3ff;
+            --green: #35c46a;
+            --yellow: #f2b73d;
+            --red: #ef5b5b;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0 auto;
+            padding: 20px;
+            max-width: 1200px;
+
+            background: var(--background);
+            color: var(--text);
+
+            font-family:
+                system-ui,
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                sans-serif;
+        }
+
+        h1 {
+            margin-bottom: 4px;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 15px;
+            color: var(--muted);
+        }
+
+        .updated {
+            margin-bottom: 20px;
+            color: var(--muted);
+        }
+
+        .tiles {
+            display: grid;
+
+            grid-template-columns:
+                repeat(
+                    auto-fit,
+                    minmax(170px, 1fr)
+                );
+
+            gap: 12px;
+        }
+
+        .tile,
+        .panel {
+            padding: 16px;
+
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+
+        .tile .label {
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        .tile .value {
+            margin-top: 5px;
+
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .tile .note {
+            margin-top: 5px;
+
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .charts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .full {
+            grid-column: 1 / -1;
+        }
+
+        canvas {
+            width: 100% !important;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+
+            font-size: 13px;
+        }
+
+        th,
+        td {
+            padding: 8px;
+
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            color: var(--muted);
+        }
+
+        .tables {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .on {
+            color: var(--green);
+        }
+
+        .off {
+            color: var(--muted);
+        }
+
+        .error {
+            color: var(--red);
+        }
+
+        @media (max-width: 800px) {
+            .charts,
+            .tables {
+                grid-template-columns: 1fr;
+            }
+
+            .full {
+                grid-column: auto;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>Affugter Dashboard</h1>
+
+<div
+    class="updated"
+    id="updated">
+    Henter data...
+</div>
+
+
+<div class="tiles">
+
+    <div class="tile">
+        <div class="label">
+            Luftfugtighed
+        </div>
+
+        <div
+            class="value"
+            id="humidity">
+            -
+        </div>
+
+        <div
+            class="note"
+            id="humidityNote">
+        </div>
+    </div>
+
+
+    <div class="tile">
+        <div class="label">
+            Temperatur
+        </div>
+
+        <div
+            class="value"
+            id="temperature">
+            -
+        </div>
+
+        <div class="note">
+            °C
+        </div>
+    </div>
+
+
+    <div class="tile">
+        <div class="label">
+            Affugter
+        </div>
+
+        <div
+            class="value"
+            id="shelly">
+            -
+        </div>
+
+        <div
+            class="note"
+            id="shellyNote">
+        </div>
+    </div>
+
+
+    <div class="tile">
+        <div class="label">
+            Elpris nu
+        </div>
+
+        <div
+            class="value"
+            id="price">
+            -
+        </div>
+
+        <div class="note">
+            DKK/kWh
+        </div>
+    </div>
+
+
+    <div class="tile">
+        <div class="label">
+            Daglig pristærskel
+        </div>
+
+        <div
+            class="value"
+            id="threshold">
+            -
+        </div>
+
+        <div class="note">
+            Laveste 25 %
+        </div>
+    </div>
+
+
+    <div class="tile">
+        <div class="label">
+            Sensor
+        </div>
+
+        <div
+            class="value"
+            id="sensor">
+            -
+        </div>
+
+        <div
+            class="note"
+            id="sensorNote">
+        </div>
+    </div>
+
+</div>
+
+
+<div class="charts">
+
+    <div class="panel">
+        <h2>
+            Luftfugtighed – sidste 24 timer
+        </h2>
+
+        <canvas id="humidityChart"></canvas>
+    </div>
+
+
+    <div class="panel">
+        <h2>
+            Temperatur – sidste 24 timer
+        </h2>
+
+        <canvas id="temperatureChart"></canvas>
+    </div>
+
+
+    <div class="panel full">
+        <h2>
+            Elpris i dag
+        </h2>
+
+        <canvas id="priceChart"></canvas>
+    </div>
+
+</div>
+
+
+<div class="tables">
+
+    <div class="panel">
+        <h2>
+            Seneste ændringer af affugter
+        </h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Tid</th>
+                    <th>Tilstand</th>
+                    <th>Årsag</th>
+                </tr>
+            </thead>
+
+            <tbody id="stateHistory">
+            </tbody>
+        </table>
+    </div>
+
+
+    <div class="panel">
+        <h2>
+            Seneste systemfejl
+        </h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Tid</th>
+                    <th>Type</th>
+                    <th>Fejl</th>
+                </tr>
+            </thead>
+
+            <tbody id="errorHistory">
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+
+<script>
+    const $ = id =>
+        document.getElementById(id);
+
+    const get = async url => {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+        }
+
+        return response.json();
+    };
+
+
+    const timeLabel = timestamp =>
+        new Date(timestamp)
+            .toLocaleTimeString(
+                "da-DK",
+                {
+                    hour: "2-digit",
+                    minute: "2-digit"
+                }
+            );
+
+
+    const dateLabel = timestamp =>
+        new Date(timestamp)
+            .toLocaleString("da-DK");
+
+
+    let humidityChart;
+    let temperatureChart;
+    let priceChart;
+
+
+    function chartOptions() {
+        return {
+            responsive: true,
+            animation: false,
+
+            plugins: {
+                legend: {
+                    labels: {
+                        color: "#8aa0b2"
+                    }
+                }
+            },
+
+            scales: {
+                x: {
+                    ticks: {
+                        color: "#8aa0b2",
+                        maxTicksLimit: 10
+                    },
+
+                    grid: {
+                        color: "#2b3a49"
+                    }
+                },
+
+                y: {
+                    ticks: {
+                        color: "#8aa0b2"
+                    },
+
+                    grid: {
+                        color: "#2b3a49"
+                    }
+                }
+            }
+        };
+    }
+
+
+    async function refreshStatus() {
+        try {
+            const data = await get(
+                "/dashboard/api/status"
+            );
+
+            $("updated").textContent =
+                "Opdateret " +
+                new Date()
+                    .toLocaleTimeString(
+                        "da-DK"
+                    );
+
+
+            const latest = data.latest;
+
+            if (latest) {
+                $("humidity").textContent =
+                    latest.humidity.toFixed(1)
+                    + " %";
+
+                $("temperature").textContent =
+                    latest.temperature !== null
+                        ? latest.temperature
+                            .toFixed(1)
+                        : "-";
+
+
+                const age =
+                    (
+                        Date.now()
+                        - new Date(
+                            latest.timestamp
+                        ).getTime()
+                    ) / 1000;
+
+
+                if (age < 1200) {
+                    $("sensor").textContent =
+                        "Aktiv";
+
+                    $("sensor")
+                        .className =
+                            "value on";
+                } else {
+                    $("sensor").textContent =
+                        "Ingen nye data";
+
+                    $("sensor")
+                        .className =
+                            "value error";
+                }
+
+
+                $("sensorNote").textContent =
+                    "Seneste måling: "
+                    + dateLabel(
+                        latest.timestamp
+                    );
+            }
+
+
+            if (
+                data.electricity_price
+                !== null
+            ) {
+                $("price").textContent =
+                    data.electricity_price
+                        .toFixed(4);
+            } else {
+                $("price").textContent =
+                    "Ingen data";
+            }
+
+
+            if (
+                data.electricity_threshold
+                !== null
+            ) {
+                $("threshold").textContent =
+                    data.electricity_threshold
+                        .toFixed(4);
+            } else {
+                $("threshold").textContent =
+                    "Ingen data";
+            }
+
+
+            if (!data.shelly.reachable) {
+                $("shelly").textContent =
+                    "Offline";
+
+                $("shelly")
+                    .className =
+                        "value error";
+
+                $("shellyNote").textContent =
+                    "Shelly svarer ikke";
+            } else {
+                $("shelly").textContent =
+                    data.shelly.state
+                        ? "TÆNDT"
+                        : "SLUKKET";
+
+                $("shelly")
+                    .className =
+                        data.shelly.state
+                            ? "value on"
+                            : "value off";
+
+                $("shellyNote").textContent =
+                    "Live-status";
+            }
+
+
+            $("humidityNote").textContent =
+                "Minimum "
+                + data.control
+                    .minimum_humidity
+                + "% · Nødgrænse "
+                + data.control
+                    .emergency_humidity
+                + "%";
+
+        } catch (error) {
+            $("updated").textContent =
+                "Kunne ikke hente live-data";
+        }
+    }
+
+
+    async function refreshHistory() {
+        const data = await get(
+            "/dashboard/api/history?hours=24"
+        );
+
+        const rows = data.readings;
+
+        const labels =
+            rows.map(
+                row =>
+                    timeLabel(
+                        row.timestamp
+                    )
+            );
+
+
+        const humidityData = {
+            labels: labels,
+
+            datasets: [
+                {
+                    label:
+                        "Luftfugtighed %",
+
+                    data:
+                        rows.map(
+                            row =>
+                                row.humidity
+                        ),
+
+                    borderColor:
+                        "#4aa3ff",
+
+                    backgroundColor:
+                        "rgba(74,163,255,.12)",
+
+                    fill: true,
+                    pointRadius: 0,
+                    tension: 0.3
+                },
+
+                {
+                    label: "Minimum 45%",
+
+                    data:
+                        rows.map(
+                            () => 45
+                        ),
+
+                    borderColor:
+                        "#35c46a",
+
+                    borderDash:
+                        [5, 5],
+
+                    pointRadius: 0
+                },
+
+                {
+                    label:
+                        "Nødgrænse 70%",
+
+                    data:
+                        rows.map(
+                            () => 70
+                        ),
+
+                    borderColor:
+                        "#ef5b5b",
+
+                    borderDash:
+                        [5, 5],
+
+                    pointRadius: 0
+                }
+            ]
+        };
+
+
+        if (humidityChart) {
+            humidityChart.data =
+                humidityData;
+
+            humidityChart.update();
+        } else {
+            humidityChart =
+                new Chart(
+                    $("humidityChart"),
+                    {
+                        type: "line",
+                        data: humidityData,
+                        options:
+                            chartOptions()
+                    }
+                );
+        }
+
+
+        const temperatureData = {
+            labels: labels,
+
+            datasets: [
+                {
+                    label: "°C",
+
+                    data:
+                        rows.map(
+                            row =>
+                                row.temperature
+                        ),
+
+                    borderColor:
+                        "#35c46a",
+
+                    backgroundColor:
+                        "rgba(53,196,106,.12)",
+
+                    fill: true,
+                    pointRadius: 0,
+                    tension: 0.3
+                }
+            ]
+        };
+
+
+        if (temperatureChart) {
+            temperatureChart.data =
+                temperatureData;
+
+            temperatureChart.update();
+        } else {
+            temperatureChart =
+                new Chart(
+                    $("temperatureChart"),
+                    {
+                        type: "line",
+                        data:
+                            temperatureData,
+                        options:
+                            chartOptions()
+                    }
+                );
+        }
+    }
+
+
+    async function refreshPrices() {
+        const data = await get(
+            "/dashboard/api/prices"
+        );
+
+        const rows = data.prices;
+
+        const labels =
+            rows.map(
+                row =>
+                    timeLabel(
+                        row.time_start
+                    )
+            );
+
+
+        const datasets = [
+            {
+                label: "DKK/kWh",
+
+                data:
+                    rows.map(
+                        row =>
+                            row.price
+                    ),
+
+                backgroundColor:
+                    rows.map(
+                        row =>
+                            data.threshold !== null
+                            && row.price
+                                <= data.threshold
+                                ? "#35c46a"
+                                : "#3a4b5c"
+                    )
+            }
+        ];
+
+
+        if (data.threshold !== null) {
+            datasets.push({
+                type: "line",
+
+                label:
+                    "Daglig tærskel",
+
+                data:
+                    rows.map(
+                        () =>
+                            data.threshold
+                    ),
+
+                borderColor:
+                    "#f2b73d",
+
+                borderDash:
+                    [5, 5],
+
+                pointRadius: 0
+            });
+        }
+
+
+        const chartData = {
+            labels: labels,
+            datasets: datasets
+        };
+
+
+        if (priceChart) {
+            priceChart.data =
+                chartData;
+
+            priceChart.update();
+        } else {
+            priceChart =
+                new Chart(
+                    $("priceChart"),
+                    {
+                        type: "bar",
+                        data: chartData,
+                        options:
+                            chartOptions()
+                    }
+                );
+        }
+    }
+
+
+    async function refreshStates() {
+        const data = await get(
+            "/dashboard/api/states?limit=20"
+        );
+
+        $("stateHistory").innerHTML =
+            data.states
+                .map(
+                    state => `
+                        <tr>
+                            <td>
+                                ${
+                                    dateLabel(
+                                        state.timestamp
+                                    )
+                                }
+                            </td>
+
+                            <td
+                                class="${
+                                    state.state
+                                        ? "on"
+                                        : "off"
+                                }"
+                            >
+                                ${
+                                    state.state
+                                        ? "TÆNDT"
+                                        : "SLUKKET"
+                                }
+                            </td>
+
+                            <td>
+                                ${
+                                    state.reason
+                                    ?? ""
+                                }
+                            </td>
+                        </tr>
+                    `
+                )
+                .join("");
+    }
+
+
+    async function refreshErrors() {
+        const data = await get(
+            "/dashboard/api/errors?limit=10"
+        );
+
+        $("errorHistory").innerHTML =
+            data.errors
+                .map(
+                    error => `
+                        <tr>
+                            <td>
+                                ${
+                                    dateLabel(
+                                        error.timestamp
+                                    )
+                                }
+                            </td>
+
+                            <td class="error">
+                                ${
+                                    error.error_type
+                                    ?? "-"
+                                }
+                            </td>
+
+                            <td>
+                                ${
+                                    error.error_message
+                                }
+                            </td>
+                        </tr>
+                    `
+                )
+                .join("");
+    }
+
+
+    async function refreshDashboard() {
+        await Promise.allSettled([
+            refreshStatus(),
+            refreshHistory(),
+            refreshPrices(),
+            refreshStates(),
+            refreshErrors()
+        ]);
+    }
+
+
+    refreshDashboard();
+
+    setInterval(
+        refreshStatus,
+        10000
+    );
+
+    setInterval(
+        refreshHistory,
+        60000
+    );
+
+    setInterval(
+        refreshPrices,
+        60000
+    );
+
+    setInterval(
+        refreshStates,
+        60000
+    );
+
+    setInterval(
+        refreshErrors,
+        60000
+    );
+</script>
+
+</body>
+</html>

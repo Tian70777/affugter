@@ -309,4 +309,5 @@ async def read_sensor(retries=5, delay=2):
         if attempt < retries - 1:
             time.sleep(delay)
 
+    await set_state(False)
     raise RuntimeError("Failed to read DHT11 after multiple attempts. ")
