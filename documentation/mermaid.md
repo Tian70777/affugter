@@ -100,3 +100,120 @@ flowchart TD
 
     L --> M[Application running]
 ```
+
+## API
+
+```mermaid
+flowchart LR
+    Client["Sensor / External Client"]
+    Browser["Web Browser"]
+    Developer["Developer"]
+
+    subgraph API["FastAPI – Affugter"]
+        direction TB
+
+        subgraph System["System endpoints"]
+            Humidity["POST /humidity<br/>Receive Humidity"]
+            Electricity["POST /electricity-price<br/>Receive Electricity Price"]
+            HumidifierState["POST /humidifier-state<br/>Receive Humidifier State"]
+        end
+
+        subgraph Debug["Debug endpoints"]
+            DebugPage["GET /debug/<br/>Debug Page"]
+
+            HighPrice["POST /debug/test/high_price"]
+            LowPrice["POST /debug/test/low_price"]
+            HumidityVal["POST /debug/test/humidity/{val}"]
+            PriceVal["POST /debug/test/price/{val}"]
+            Custom["POST /debug/test/custom/{hum}/{price}"]
+
+            HighHumidity["POST /debug/test/high_humidity"]
+            LowHumidity["POST /debug/test/low_humidity"]
+            Real["POST /debug/test/real"]
+
+            On["POST /debug/test/on"]
+            Off["POST /debug/test/off"]
+
+            StartLoop["POST /debug/test/server_based"]
+            StopLoop["POST /debug/test/server_based/stop"]
+        end
+
+        subgraph Dashboard["Dashboard endpoints"]
+            DashboardPage["GET /dashboard/<br/>Dashboard Page"]
+
+            DashboardStatus["GET /dashboard/api/status"]
+            DashboardHistory["GET /dashboard/api/history"]
+            DashboardPrices["GET /dashboard/api/prices"]
+            DashboardStates["GET /dashboard/api/states"]
+            DashboardErrors["GET /dashboard/api/errors"]
+        end
+    end
+
+    Controller["Controller"]
+    DB[("PostgreSQL")]
+    Smart_plug["Smart plug"]
+
+    %% System endpoints
+    Client --> Humidity
+    Client --> Electricity
+    Client --> HumidifierState
+
+    Humidity --> DB
+    Electricity --> DB
+    HumidifierState --> DB
+
+    %% Dashboard
+    Browser --> DashboardPage
+
+    DashboardPage .-> DashboardStatus
+    DashboardPage .-> DashboardHistory
+    DashboardPage .-> DashboardPrices
+    DashboardPage .-> DashboardStates
+    DashboardPage .-> DashboardErrors
+
+    DashboardStatus --> DB
+    DashboardStatus --> Smart_plug
+
+    DashboardHistory --> DB
+    DashboardPrices --> DB
+    DashboardStates --> DB
+    DashboardErrors --> DB
+
+    %% Debug interface
+    Developer --> DebugPage
+
+    DebugPage --> HighPrice
+    DebugPage --> LowPrice
+    DebugPage --> HumidityVal
+    DebugPage --> PriceVal
+    DebugPage --> Custom
+    DebugPage --> HighHumidity
+    DebugPage --> LowHumidity
+    DebugPage --> Real
+    DebugPage --> On
+    DebugPage --> Off
+    DebugPage --> StartLoop
+    DebugPage --> StopLoop
+
+    %% Controller tests
+    HighPrice --> Controller
+    LowPrice --> Controller
+    HumidityVal --> Controller
+    PriceVal --> Controller
+    Custom --> Controller
+    HighHumidity --> Controller
+    LowHumidity --> Controller
+    Real --> Controller
+
+    %% Direct Smart plug tests
+    On --> Smart_plug
+    Off --> Smart_plug
+
+    %% Loop control
+    StartLoop --> Controller
+    StopLoop --> Controller
+
+    %% Controller dependencies
+    Controller --> DB
+    Controller --> Smart_plug
+```
