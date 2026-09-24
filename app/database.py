@@ -37,17 +37,17 @@ async def log_error(error):
         await conn.commit()
 
 
-async def save_humidity(percent, temperature, source="dht11"):
+async def save_humidity(percent, temperature):
     conn = await get_connection()
 
     async with conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                INSERT INTO Humidity (percent, temperature, source)
-                VALUES (%s, %s, %s)
+                INSERT INTO Humidity (percent, temperature)
+                VALUES (%s, %s)
                 """,
-                (percent, temperature, source),
+                (percent, temperature),
             )
 
 
@@ -223,3 +223,161 @@ async def get_current_humidity():
         if age < MAX_AGE[source]:
             return float(percent), source  # fresh enough -> trust it!
     return None, None                      # nobody had a fresh reading
+
+async def get_dashboard_latest_reading():
+    conn = await get_connection()
+
+    async with conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT
+                    percent,
+                    temperature,
+                    timestamp
+                FROM Humidity
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """
+            )
+
+            row = await cur.fetchone()
+
+    if row is None:
+        return None
+
+    return {
+        "humidity": float(row[0]),
+        "temperature": (
+            float(row[1])
+            if row[1] is not None
+            else None
+        ),
+        "timestamp": row[2].isoformat(),
+    }
+
+
+async def get_dashboard_humidity_history(hours=24):
+    conn = await get_connection()
+
+    async with conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT
+                    percent,
+                    temperature,
+                    timestamp
+                FROM Humidity
+                WHERE timestamp >= NOW() - (%s * INTERVAL '1 hour')
+                ORDER BY timestamp ASC
+                """,
+                (hours,),
+            )
+
+            rows = await cur.fetchall()
+
+    return [
+        {
+            "humidity": float(row[0]),
+            "temperature": (
+                float(row[1])
+                if row[1] is not None
+                else None
+            ),
+            "timestamp": row[2].isoformat(),
+        }
+        for row in rows
+    ]
+
+
+async def get_dashboard_prices():
+    today = datetime.now(TIMEZONE).date()
+
+    conn = await get_connection()
+
+    async with conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT
+                    DKK_per_kWh,
+                    time_start,
+                    time_end
+                FROM Electricity_Prices
+                WHERE time_start::date = %s
+                ORDER BY time_start ASC
+                """,
+                (today,),
+            )
+
+            rows = await cur.fetchall()
+
+    return [
+        {
+            "price": float(row[0]),
+            "time_start": row[1].isoformat(),
+            "time_end": row[2].isoformat(),
+        }
+        for row in rows
+    ]
+
+
+async def get_dashboard_state_history(limit=20):
+    conn = await get_connection()
+
+    async with conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT
+                    state,
+                    reason,
+                    timestamp
+                FROM Humidifier_State
+                ORDER BY timestamp DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+
+            rows = await cur.fetchall()
+
+    return [
+        {
+            "state": row[0],
+            "reason": row[1],
+            "timestamp": row[2].isoformat(),
+        }
+        for row in rows
+    ]
+
+
+async def get_dashboard_errors(limit=10):
+    conn = await get_connection()
+
+    async with conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT
+                    error_type,
+                    error_message,
+                    timestamp
+                FROM Errors
+                ORDER BY timestamp DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+
+            rows = await cur.fetchall()
+
+    return [
+        {
+            "error_type": row[0],
+            "error_message": row[1],
+            "timestamp": row[2].isoformat(),
+        }
+        for row in rows
+    ]

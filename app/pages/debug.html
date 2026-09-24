@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Humidifier Control</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: #111318;
+            color: #e8eaf0;
+            font-family:
+                Inter,
+                system-ui,
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                sans-serif;
+        }
+
+        .container {
+            width: min(1000px, calc(100% - 40px));
+            margin: 0 auto;
+            padding: 48px 0 60px;
+        }
+
+        header {
+            margin-bottom: 32px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 2rem;
+            font-weight: 650;
+            letter-spacing: -0.03em;
+        }
+
+        .subtitle {
+            margin-top: 8px;
+            color: #8f96a3;
+            font-size: 0.95rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: #191c22;
+            border: 1px solid #292d36;
+            border-radius: 12px;
+            padding: 22px;
+        }
+
+        .card.wide {
+            grid-column: 1 / -1;
+        }
+
+        h2 {
+            margin: 0 0 18px;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #cdd1d9;
+        }
+
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        button {
+            appearance: none;
+            border: 1px solid #353a45;
+            border-radius: 7px;
+            background: #242832;
+            color: #e8eaf0;
+            padding: 11px 14px;
+            font: inherit;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition:
+                background 120ms ease,
+                border-color 120ms ease,
+                transform 60ms ease;
+        }
+
+        button:hover {
+            background: #2c313c;
+            border-color: #484e5c;
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+
+        button.primary {
+            background: #3157d5;
+            border-color: #4268e5;
+        }
+
+        button.primary:hover {
+            background: #3b62e0;
+        }
+
+        button.on {
+            background: #17653f;
+            border-color: #258255;
+        }
+
+        button.on:hover {
+            background: #1d754a;
+        }
+
+        button.off {
+            background: #713333;
+            border-color: #914242;
+        }
+
+        button.off:hover {
+            background: #813b3b;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+        }
+
+        label {
+            color: #9da3af;
+            font-size: 0.82rem;
+            font-weight: 500;
+        }
+
+        input {
+            width: 100%;
+            border: 1px solid #353a45;
+            border-radius: 7px;
+            outline: none;
+            background: #111318;
+            color: #f0f1f4;
+            padding: 11px 12px;
+            font: inherit;
+        }
+
+        input:focus {
+            border-color: #5475e8;
+            box-shadow: 0 0 0 3px rgba(84, 117, 232, 0.12);
+        }
+
+        .input-action {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 10px;
+            align-items: end;
+        }
+
+        .custom-fields {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 10px;
+            align-items: end;
+        }
+
+        .response-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .response-header h2 {
+            margin: 0;
+        }
+
+        #status {
+            color: #7f8795;
+            font-size: 0.8rem;
+        }
+
+        #response {
+            margin: 0;
+            min-height: 150px;
+            max-height: 400px;
+            overflow: auto;
+            background: #0d0f13;
+            border: 1px solid #292d36;
+            border-radius: 8px;
+            padding: 16px;
+            color: #b8c4d8;
+            font-family:
+                "JetBrains Mono",
+                "Fira Code",
+                Consolas,
+                monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        @media (max-width: 700px) {
+            .container {
+                width: min(100% - 24px, 1000px);
+                padding-top: 28px;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .card.wide {
+                grid-column: auto;
+            }
+
+            .button-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .custom-fields {
+                grid-template-columns: 1fr;
+            }
+
+            .input-action {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="container">
+        <header>
+            <h1>Humidifier Control</h1>
+            <div class="subtitle">
+                Debug and manual control interface
+            </div>
+        </header>
+
+        <div class="grid">
+
+            <section class="card wide">
+                <h2>Fixed tests</h2>
+
+                <div class="button-grid">
+                    <button onclick="post('/debug/test/high_price')">
+                        High price
+                    </button>
+
+                    <button onclick="post('/debug/test/low_price')">
+                        Low price
+                    </button>
+
+                    <button onclick="post('/debug/test/high_humidity')">
+                        High humidity
+                    </button>
+
+                    <button onclick="post('/debug/test/low_humidity')">
+                        Low humidity
+                    </button>
+
+                    <button onclick="post('/debug/test/real')">
+                        Real values
+                    </button>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>Shelly</h2>
+
+                <div class="button-grid">
+                    <button
+                        class="on"
+                        onclick="post('/debug/test/on')"
+                    >
+                        Turn ON
+                    </button>
+
+                    <button
+                        class="off"
+                        onclick="post('/debug/test/off')"
+                    >
+                        Turn OFF
+                    </button>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>Server-based control</h2>
+
+                <div class="button-grid">
+                    <button
+                        class="primary"
+                        onclick="post('/debug/test/server_based')"
+                    >
+                        Start
+                    </button>
+
+                    <button
+                        onclick="post('/debug/test/server_based/stop')"
+                    >
+                        Stop
+                    </button>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>Humidity</h2>
+
+                <div class="input-action">
+                    <div class="field">
+                        <label for="humidity">Relative humidity (%)</label>
+                        <input
+                            id="humidity"
+                            type="number"
+                            step="0.1"
+                            placeholder="e.g. 65"
+                        >
+                    </div>
+
+                    <button
+                        onclick="postValue(
+                            '/debug/test/humidity/',
+                            'humidity'
+                        )"
+                    >
+                        Test
+                    </button>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>Electricity price</h2>
+
+                <div class="input-action">
+                    <div class="field">
+                        <label for="price">DKK / kWh</label>
+                        <input
+                            id="price"
+                            type="number"
+                            step="0.01"
+                            placeholder="e.g. 0.65"
+                        >
+                    </div>
+
+                    <button
+                        onclick="postValue(
+                            '/debug/test/price/',
+                            'price'
+                        )"
+                    >
+                        Test
+                    </button>
+                </div>
+            </section>
+
+            <section class="card wide">
+                <h2>Custom test</h2>
+
+                <div class="custom-fields">
+                    <div class="field">
+                        <label for="custom-humidity">
+                            Humidity (%)
+                        </label>
+
+                        <input
+                            id="custom-humidity"
+                            type="number"
+                            step="0.1"
+                            placeholder="e.g. 60"
+                        >
+                    </div>
+
+                    <div class="field">
+                        <label for="custom-price">
+                            Electricity price (DKK / kWh)
+                        </label>
+
+                        <input
+                            id="custom-price"
+                            type="number"
+                            step="0.01"
+                            placeholder="e.g. 0.50"
+                        >
+                    </div>
+
+                    <button
+                        class="primary"
+                        onclick="postCustom()"
+                    >
+                        Run test
+                    </button>
+                </div>
+            </section>
+
+            <section class="card wide">
+                <div class="response-header">
+                    <h2>Response</h2>
+                    <span id="status">Idle</span>
+                </div>
+
+                <pre id="response">No request sent yet.</pre>
+            </section>
+
+        </div>
+    </main>
+
+    <script>
+        async function post(url) {
+            await sendRequest(url);
+        }
+
+
+        async function postValue(baseUrl, inputId) {
+            const value =
+                document.getElementById(inputId).value;
+
+            if (value === "") {
+                showError("Enter a value first.");
+                return;
+            }
+
+            await sendRequest(
+                baseUrl + encodeURIComponent(value)
+            );
+        }
+
+
+        async function postCustom() {
+            const humidity =
+                document.getElementById(
+                    "custom-humidity"
+                ).value;
+
+            const price =
+                document.getElementById(
+                    "custom-price"
+                ).value;
+
+            if (humidity === "" || price === "") {
+                showError(
+                    "Enter both humidity and electricity price."
+                );
+                return;
+            }
+
+            await sendRequest(
+                "/debug/test/custom/"
+                + encodeURIComponent(humidity)
+                + "/"
+                + encodeURIComponent(price)
+            );
+        }
+
+
+        async function sendRequest(url) {
+            const status =
+                document.getElementById("status");
+
+            status.textContent = "Sending...";
+
+            try {
+                const response = await fetch(url, {
+                    method: "POST"
+                });
+
+                await showResponse(response);
+
+                status.textContent =
+                    response.status
+                    + " "
+                    + response.statusText;
+            } catch (error) {
+                showError(error.message);
+                status.textContent = "Request failed";
+            }
+        }
+
+
+        async function showResponse(response) {
+            const output =
+                document.getElementById("response");
+
+            const text = await response.text();
+
+            try {
+                const data = JSON.parse(text);
+
+                output.textContent =
+                    JSON.stringify(data, null, 2);
+            } catch {
+                output.textContent = text;
+            }
+        }
+
+
+        function showError(message) {
+            document.getElementById(
+                "response"
+            ).textContent = message;
+        }
+    </script>
+</body>
+</html>

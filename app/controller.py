@@ -299,13 +299,17 @@ async def stop_server_based_loop():
     return True
 
 
-async def dht11_feeder(interval=30):
+async def dht11_feeder(interval=30, max_failures=5):
     """Reads the local DHT11 every `interval` seconds and saves it
-    with source='dht11'. Only started when ENABLE_DHT11=true."""
+    with source='dht11'. Only started when ENABLE_DHT11=true.
+    Safety (from main): if the sensor fails max_failures times in a
+    row, shut the plug off - a blind system must not keep running.
+    """
     import board            # imported HERE (lazily), not at top of file, so
     import adafruit_dht     # machines without the sensor (home) never touch it
     dht = adafruit_dht.DHT11(board.D4)
 
+    failures = 0
     while True:
         try:
             humidity = dht.humidity
@@ -313,8 +317,19 @@ async def dht11_feeder(interval=30):
             if humidity is not None and temperature is not None:
                 await save_humidity(humidity, temperature, source="dht11")
                 print(f"[dht11] {humidity:.1f}% {temperature:.1f}C")
+                failures = 0
+            else:
+                failures += 1
         except RuntimeError as e:
             await log_error(e)      # DHT11 misreads often — just retry next cycle
+            failures += 1
         except Exception as e:
             await log_error(e)
+            failures += 1
+
+        if failures >= max_failures:
+            await set_state(False)
+            await log_error(
+                RuntimeError(f"DHT11 failed {failures} times in a row. Shutting off the plug."))
+            failures = 0
         await asyncio.sleep(interval)
