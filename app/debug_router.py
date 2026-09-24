@@ -1,4 +1,3 @@
-from fastapi import APIRouter
 
 from .database import (
     save_state,
