@@ -37,17 +37,17 @@ async def log_error(error):
         await conn.commit()
 
 
-async def save_humidity(percent, temperature):
+async def save_humidity(percent, temperature, source="dht11"):
     conn = await get_connection()
 
     async with conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                INSERT INTO Humidity (percent, temperature)
-                VALUES (%s, %s)
+                INSERT INTO Humidity (percent, temperature, source)
+                VALUES (%s, %s, %s)
                 """,
-                (percent, temperature),
+                (percent, temperature, source),
             )
 
 
