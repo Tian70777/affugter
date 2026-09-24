@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<!--
+  Fugtstyring dashboard - EN enkelt fil.
+  Den henter data fra serverens JSON-endpoints og tegner den.
+  Ingen build, ingen npm. Aabnes paa http://<server-ip>:8000/
+
+  Sådan hænger det sammen:
+    /status    -> nyeste maaling + om sensoren er "frisk"
+    /plug      -> stikkets LIVE tilstand (spoerger Shelly)
+    /prices    -> dagens 24 elpriser (hvilke timer er billige)
+    /history   -> maalinger de sidste 24 timer (til graferne)
+    /switches  -> "dagbogen" over stik-skift
+-->
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fugtstyring</title>
+
+<!-- Chart.js henter din browser fra internettet (ikke serveren). -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<style>
+  :root {
+    --bg: #0f1720; --card: #1b2733; --ink: #e7eef5; --muted: #8aa0b2;
+    --line: #2b3a49; --accent: #4aa3ff;
+    --green: #35c46a; --amber: #f2b73d; --red: #ef5b5b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    padding: 18px; max-width: 1100px; margin-inline: auto;
+  }
+  h1 { font-size: 20px; margin: 0 0 2px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+
+  /* --- Live-striben (kortene i toppen) --- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 12px; }
+  .tile {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 14px;
+  }
+  .tile .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+  .tile .value { font-size: 30px; font-weight: 700; margin-top: 4px; }
+  .tile .note  { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; }
+
+  /* --- Graf-kort --- */
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+  .charts .full { grid-column: 1 / -1; }
+  .panel {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 14px;
+  }
+  .panel h2 { font-size: 14px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
+  canvas { width: 100% !important; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; }
+
+  @media (max-width: 720px){ .charts { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+  <h1>💧 Fugtstyring</h1>
+  <div class="sub" id="clock">Henter data…</div>
+
+  <!-- ===== LIVE (opdateres hvert 10. sekund) ===== -->
+  <div class="tiles">
+    <div class="tile"><div class="label">Fugt nu</div>
+      <div class="value" id="humVal">–</div><div class="note" id="humNote"></div></div>
+
+    <div class="tile"><div class="label">Temperatur</div>
+      <div class="value" id="tmpVal">–</div><div class="note">grader C</div></div>
+
+    <div class="tile"><div class="label">Stik (affugter)</div>
+      <div class="value" id="plugVal">–</div><div class="note" id="plugNote"></div></div>
+
+    <div class="tile"><div class="label">Elpris nu</div>
+      <div class="value" id="priceVal">–</div><div class="note" id="priceNote"></div></div>
+
+    <div class="tile"><div class="label">Sensor</div>
+      <div class="value" id="sensorVal">–</div><div class="note" id="sensorNote"></div></div>
+  </div>
+
+  <!-- ===== HISTORIK (grafer) ===== -->
+  <div class="charts">
+    <div class="panel"><h2>Fugt – sidste 24 timer</h2><canvas id="humChart" height="220"></canvas></div>
+    <div class="panel"><h2>Temperatur – sidste 24 timer</h2><canvas id="tmpChart" height="220"></canvas></div>
+    <div class="panel full"><h2>Elpris i dag (grøn = billig time)</h2><canvas id="priceChart" height="140"></canvas></div>
+  </div>
+
+  <!-- ===== DAGBOG (skift af stikket) ===== -->
+  <div class="panel" style="margin-top:18px;">
+    <h2>Stik-dagbog – seneste skift</h2>
+    <table><thead><tr>
+      <th>Tid</th><th>Handling</th><th>Fugt</th><th>Pris</th><th>Begrundelse</th>
+    </tr></thead><tbody id="diary"><tr><td colspan="5">Henter…</td></tr></tbody></table>
+  </div>
+
+<script>
+// ---------------------------------------------------------------
+// Små hjælpere
+// ---------------------------------------------------------------
+const $ = id => document.getElementById(id);
+const get = url => fetch(url).then(r => r.ok ? r.json() : Promise.reject(r.status));
+const clock = () => new Date().toLocaleTimeString('da-DK');
+
+// Fugt-farve efter DINE graenser: 45 / 60 / 70
+function humColor(h){
+  if (h == null) return 'var(--muted)';
+  if (h >= 70) return 'var(--red)';     // skimmelfare
+  if (h >= 60) return 'var(--amber)';   // spareomraade
+  if (h <= 45) return 'var(--accent)';  // toert
+  return 'var(--green)';                // normalt
+}
+
+// ---------------------------------------------------------------
+// LIVE-striben
+// ---------------------------------------------------------------
+async function refreshLive(){
+  $('clock').textContent = 'Opdateret ' + clock();
+
+  // Fugt + temperatur + sensor-friskhed kommer fra /status
+  try {
+    const s = await get('/status');
+    const r = s.latest || {};
+    $('humVal').textContent = r.humidity != null ? r.humidity.toFixed(1)+'%' : '–';
+    $('humVal').style.color = humColor(r.humidity);
+    $('humNote').textContent = 'kilde: ' + (r.source || '?');
+    $('tmpVal').textContent = r.temperature != null ? r.temperature.toFixed(1) : '–';
+
+    // stale = true betyder: vi har ikke hoert fra sensoren for nylig
+    const fresh = s.stale === false;
+    $('sensorVal').innerHTML =
+      `<span class="dot" style="background:${fresh?'var(--green)':'var(--red)'}"></span>` +
+      (fresh ? 'Live' : 'Tavs');
+    $('sensorNote').textContent = (s.total_readings ?? '?') + ' maalinger i alt';
+  } catch(e){ $('sensorVal').textContent = 'server-fejl'; }
+
+  // Stikkets LIVE tilstand kommer fra /plug (spoerger Shelly direkte)
+  try {
+    const p = await get('/plug');
+    if (!p.reachable){
+      $('plugVal').textContent = '?'; $('plugVal').style.color = 'var(--muted)';
+      $('plugNote').textContent = 'Shelly svarer ikke';
+    } else {
+      $('plugVal').textContent = p.on ? 'TÆNDT' : 'slukket';
+      $('plugVal').style.color = p.on ? 'var(--green)' : 'var(--muted)';
+      $('plugNote').textContent = (p.watt != null ? p.watt.toFixed(0) : 0) + ' W';
+    }
+  } catch(e){ $('plugNote').textContent = 'kunne ikke naa /plug'; }
+
+  // Elpris "nu" = dagens priser fra /prices, slaa den aktuelle time op
+  try {
+    const pr = await get('/prices');
+    const h = new Date().getHours();                 // dansk time (browser = DK)
+    const row = pr.hours.find(x => x.hour === h);
+    if (row){
+      $('priceVal').textContent = row.price.toFixed(2);
+      $('priceNote').innerHTML = row.is_cheap
+        ? '<span class="badge" style="background:var(--green);color:#04210f">💚 billig</span>'
+        : '<span class="badge" style="background:var(--red);color:#2a0808">💸 dyr</span>';
+    }
+  } catch(e){ $('priceNote').textContent = 'ingen prisdata'; }
+}
+
+// ---------------------------------------------------------------
+// GRAFER
+// ---------------------------------------------------------------
+let humChart, tmpChart, priceChart;
+const label = ts => new Date(ts).toLocaleTimeString('da-DK',{hour:'2-digit',minute:'2-digit'});
+
+// En vandret stiplet "graense-linje" (fx 70%) paa tvaers af grafen
+const limitLine = (val, color, n) => ({
+  label: val+'%', data: Array(n).fill(val), borderColor: color,
+  borderDash:[5,5], borderWidth:1, pointRadius:0, fill:false, tension:0
+});
+
+async function refreshCharts(){
+  const hist = await get('/history?hours=24');
+  const rows = hist.readings;
+  const labels = rows.map(r => label(r.ts));
+  const n = labels.length;
+
+  // --- Fugt-graf med graenselinjer 45/60/70 ---
+  const humData = {
+    labels,
+    datasets: [
+      { label:'Fugt %', data: rows.map(r=>r.humidity), borderColor:'#4aa3ff',
+        backgroundColor:'rgba(74,163,255,.12)', fill:true, tension:.3, pointRadius:0 },
+      limitLine(70,'#ef5b5b',n), limitLine(60,'#f2b73d',n), limitLine(45,'#4aa3ff',n),
+    ]
+  };
+  humChart ? (humChart.data=humData, humChart.update())
+           : humChart = new Chart($('humChart'), {type:'line', data:humData, options:baseOpts()});
+
+  // --- Temperatur-graf ---
+  const tmpData = { labels, datasets:[
+    { label:'°C', data: rows.map(r=>r.temperature), borderColor:'#35c46a',
+      backgroundColor:'rgba(53,196,106,.12)', fill:true, tension:.3, pointRadius:0 }]};
+  tmpChart ? (tmpChart.data=tmpData, tmpChart.update())
+           : tmpChart = new Chart($('tmpChart'), {type:'line', data:tmpData, options:baseOpts()});
+
+  // --- Elpris-graf (soejler; billige timer groenne) ---
+  try {
+    const pr = await get('/prices');
+    const nowH = new Date().getHours();
+    const priceData = { labels: pr.hours.map(x=>x.hour+':00'), datasets:[{
+      label:'kr/kWh', data: pr.hours.map(x=>x.price),
+      backgroundColor: pr.hours.map(x =>
+        x.hour===nowH ? '#4aa3ff' : (x.is_cheap ? '#35c46a' : '#3a4b5c')),
+    }]};
+    priceChart ? (priceChart.data=priceData, priceChart.update())
+               : priceChart = new Chart($('priceChart'), {type:'bar', data:priceData, options:baseOpts(false)});
+  } catch(e){ /* ingen priser endnu -> spring over */ }
+}
+
+// Faelles graf-udseende (moerkt tema)
+function baseOpts(showLegend=false){
+  return {
+    responsive:true, animation:false,
+    plugins:{ legend:{ display:showLegend, labels:{color:'#8aa0b2'} } },
+    scales:{
+      x:{ ticks:{color:'#8aa0b2', maxTicksLimit:8}, grid:{color:'#2b3a49'} },
+      y:{ ticks:{color:'#8aa0b2'}, grid:{color:'#2b3a49'} }
+    }
+  };
+}
+
+// ---------------------------------------------------------------
+// DAGBOG (skift af stikket)
+// ---------------------------------------------------------------
+async function refreshDiary(){
+  try {
+    const d = await get('/switches?limit=15');
+    if (!d.switches.length){ $('diary').innerHTML =
+      '<tr><td colspan="5">Ingen skift endnu.</td></tr>'; return; }
+    $('diary').innerHTML = d.switches.map(s => `
+      <tr>
+        <td>${new Date(s.ts).toLocaleString('da-DK')}</td>
+        <td style="color:${s.turned_on?'var(--green)':'var(--muted)'}">
+          ${s.turned_on ? '⚡ TÆNDT' : '○ slukket'}</td>
+        <td>${s.humidity != null ? s.humidity.toFixed(1)+'%' : '–'}</td>
+        <td>${s.price != null ? s.price.toFixed(2) : '–'}</td>
+        <td>${s.reason || ''}</td>
+      </tr>`).join('');
+  } catch(e){ $('diary').innerHTML = '<tr><td colspan="5">Kunne ikke hente.</td></tr>'; }
+}
+
+// ---------------------------------------------------------------
+// Start + auto-opdatering
+// ---------------------------------------------------------------
+function boot(){
+  refreshLive(); refreshCharts(); refreshDiary();
+  setInterval(refreshLive,   10000);   // live-tal: hvert 10. sekund
+  setInterval(refreshCharts, 60000);   // grafer: hvert minut
+  setInterval(refreshDiary,  60000);   // dagbog: hvert minut
+}
+boot();
+</script>
+</body>
+</html>
