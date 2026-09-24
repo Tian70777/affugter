@@ -30,7 +30,14 @@ router = APIRouter(prefix="/dashboard")
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard_page():
-    return (PAGES_DIR / "dashboard.html").read_text()
+    html = (PAGES_DIR / "dashboard.html").read_text(
+        encoding="utf-8"
+    )
+
+    return HTMLResponse(
+        content=html,
+        media_type="text/html; charset=utf-8",
+    )
 
 
 @router.get("/api/status")
@@ -117,4 +124,4 @@ async def dashboard_errors(limit: int = 10):
         "errors": await get_dashboard_errors(
             limit
         ),
-    }
+    }   
