@@ -132,9 +132,9 @@ async def save_state(state, reason):
             )
 
 # in a server-based context, retrieves 
-async def get_daily_threshold(percentile=0.25):
+async def get_daily_threshold(percentile=0.25, day=None):
 
-    today = datetime.now(TIMEZONE).date()
+    today = day or datetime.now(TIMEZONE).date()
 
     conn = await get_connection()
 

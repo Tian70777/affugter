@@ -6,6 +6,10 @@ from .shelly import set_state, get_state
 from .database import get_latest_humidity, get_current_electricity_price, save_humidity
 from .electricity import fetch_electricity_price
 from .state import app
+from zoneinfo import ZoneInfo
+from .database import get_daily_threshold
+
+TIMEZONE = ZoneInfo("Europe/Copenhagen")
 
 """
 The controller plays different roles in a server-included or a server-based context.
@@ -173,6 +177,23 @@ async def determine_state_without_price(humidity):
 
 server_based_task = None
 
+# helper method: Make a new threshold if it is missing or from another day
+async def refresh_threshold_if_needed():
+    today = datetime.now(TIMEZONE).date()
+
+    if app.state.threshold is not None and app.state.threshold_date == today:
+        return                                    # still today's -> nothing to do
+
+    try:
+        app.state.threshold = await get_daily_threshold(day=today)
+        app.state.threshold_date = today
+        print(f"New threshold for {today}: {app.state.threshold:.5f} DKK/kWh")
+    except Exception as e:
+        await log_error(e)
+        print(f"Threshold update failed: {e}")
+        if app.state.threshold_date != today:     # never use yesterday's threshold
+            app.state.threshold = None
+
 # describes a loop for electricity price retrieval in a server-based context; not relevant in a server-inclusive context
 async def server_based_loop():
     while True:
@@ -203,6 +224,7 @@ async def server_based_loop():
                     await log_error(e)
                     print("Retrieving electricity price from database has failed.")
 
+                # ---- block 1: download prices if missing ----
                 if price is None:
                     print("No electricity prices found in database. Fetching prices...")
 
@@ -219,8 +241,13 @@ async def server_based_loop():
                         await log_error(e)
                         print("Retry has failed.")
 
-                if price is None:
-                    print("Running without API data.")
+                # ---- NEW: make a new threshold if the date changed ----
+                if price is not None:
+                    await refresh_threshold_if_needed()
+
+                # ---- block 2: decide ----
+                if price is None or app.state.threshold is None:
+                    print("Running without price or threshold data.")
                     result = await determine_state_without_price(humidity)
 
                 else:
