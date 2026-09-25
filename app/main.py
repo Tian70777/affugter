@@ -9,9 +9,8 @@ from .debug_router import router as debug_router
 from .shelly import check_shelly
 from .electricity import fetch_electricity_price
 from .database import get_daily_threshold, log_error
-from .controller import server_based_loop, dht11_feeder
+from .controller import server_based_loop, dht11_feeder, refresh_threshold_if_needed
 from .zigbee import listen_zigbee
-from .controller import server_based_loop
 from .dashboard_router import router as dashboard_router
 
 """
@@ -35,18 +34,7 @@ async def lifespan(app: FastAPI):
         await log_error(e)
         print(f"Energi Data Service electricity price fetch failed: {e}")
 
-    try:
-        app.state.threshold = await get_daily_threshold()
-
-        print(
-            f"Today's threshold: "
-            f"{app.state.threshold:.5f} DKK/kWh"
-        )
-
-    except Exception as e:
-        await log_error(e)
-        print(f"Threshold fetch failed: {e}")
-        app.state.threshold = None
+    await refresh_threshold_if_needed()
 
     server_based_task = asyncio.create_task(
         server_based_loop()
