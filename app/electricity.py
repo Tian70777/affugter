@@ -29,7 +29,7 @@ async def fetch_electricity_price():
         "limit": 0,
     }
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(
             url,
             params=params,

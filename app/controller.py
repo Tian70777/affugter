@@ -26,6 +26,33 @@ DARK_TIME_WAKE = 6
 
 SHELLY_RESTART_DELAY = 900  # 15 minutes
 
+# helper method: the only place that switches the plug and records the change.
+# Both decision functions call it, so the acting logic exists exactly once.
+async def apply_state(desired_state, current_state, reason):
+
+    if desired_state == current_state:
+        return False
+
+    print("Changing Shelly state...")
+
+    shelly_result = await set_state(desired_state)
+
+    print(f"set_state returned: {shelly_result!r}")
+
+    if not shelly_result:
+        print("Failed to change Shelly state.")
+        return False
+
+    await save_state(desired_state, reason)
+
+    print(
+        f"TURNED "
+        f"{'ON' if desired_state else 'OFF'}: "
+        f"{reason}"
+    )
+
+    return True
+
 
 async def determine_state(humidity, electricity_price):
 
@@ -114,23 +141,8 @@ async def determine_state(humidity, electricity_price):
 
     print(f"Reason: {reason}")
 
-    if desired_state != current_state:
-        print("Changing Shelly state...")
-
-        shelly_result = await set_state(desired_state)
-
-        print(f"set_state returned: {shelly_result!r}")
-
-        if shelly_result:
-            await save_state(desired_state, reason)
-
-            print(
-                f"TURNED "
-                f"{'ON' if desired_state else 'OFF'}: "
-                f"{reason}"
-            )
-        else:
-            print("Failed to change Shelly state.")
+    # call helper method to apply the desired state if it differs from the current state
+    await apply_state(desired_state, current_state, reason)
 
     return {
         "humidity": humidity,
@@ -165,6 +177,8 @@ async def determine_state_without_price(humidity):
             f"No electricity price available; "
             f"humidity {humidity}% does not require emergency operation"
         )
+    # call helper method to apply the desired state if it differs from the current state
+    await apply_state(desired_state, current_state, reason)
 
     return {
         "humidity": humidity,
@@ -259,26 +273,6 @@ async def server_based_loop():
                     )
 
                     print(f"Price at timestamp {datetime.now()}: {price} DKK/kWh")
-
-                if result["desired_state"] != result["current_state"]:
-                    print("Changing Shelly state...")
-
-                    shelly_result = await set_state(result["desired_state"])
-
-                    print(f"set_state returned: {shelly_result!r}")
-
-                    if shelly_result:
-                        await save_state(result["desired_state"], result["reason"])
-
-                        print(
-                            f"TURNED "
-                            f"{'ON' if result['desired_state'] else 'OFF'}: "
-                            f"{result['reason']}"
-                        )
-                    else:
-                        print("Failed to change Shelly state.")
-
-
 
 
         except Exception as e:
