@@ -1,13 +1,15 @@
 import asyncio
-import board
-import adafruit_dht
 import time
 from datetime import datetime, timedelta, time as datetime_time
-from .database import save_state, log_error
+from .database import save_state, log_error, get_current_humidity
 from .shelly import set_state, get_state
 from .database import get_latest_humidity, get_current_electricity_price, save_humidity
 from .electricity import fetch_electricity_price
 from .state import app
+from zoneinfo import ZoneInfo
+from .database import get_daily_threshold
+
+TIMEZONE = ZoneInfo("Europe/Copenhagen")
 
 """
 The controller plays different roles in a server-included or a server-based context.
@@ -175,68 +177,109 @@ async def determine_state_without_price(humidity):
 
 server_based_task = None
 
+# helper method: Make a new threshold if it is missing or from another day
+async def refresh_threshold_if_needed():
+    today = datetime.now(TIMEZONE).date()
+
+    if app.state.threshold is not None and app.state.threshold_date == today:
+        return                                    # still today's -> nothing to do
+
+    try:
+        app.state.threshold = await get_daily_threshold(day=today)
+        app.state.threshold_date = today
+        print(f"New threshold for {today}: {app.state.threshold:.5f} DKK/kWh")
+    except Exception as e:
+        await log_error(e)
+        print(f"Threshold update failed: {e}")
+        if app.state.threshold_date != today:     # never use yesterday's threshold
+            app.state.threshold = None
+
 # describes a loop for electricity price retrieval in a server-based context; not relevant in a server-inclusive context
 async def server_based_loop():
     while True:
         try:
-            humidity, temperature = await read_sensor()
-            price = None
+            # freshest sensor from the DB (not the GPIO pin)
+            humidity, source = await get_current_humidity()
 
-            print("Retrieving current electricity price...")
+            #  "blind = safe". If NO sensor has a fresh reading, humidity is
+            #     None. We must NOT run the decision logic (comparing None would
+            #     crash), so we force the plug OFF and wait for the next cycle.
+            if humidity is None:
+                print("No fresh humidity reading — safe mode (OFF).")
+                if await get_state():  # only act if it's ON
+                    await set_state(False)
+                    await save_state(False, "No fresh sensor data — safe OFF")
 
-            try:
-                price = await get_current_electricity_price()
-            except Exception as e:
-                await log_error(e)
-                print("Retrieving electricity price from database has failed.")
+            else:
+                # We HAVE a good reading -> run the normal price + decision flow.
+                print(f"Using {source} reading: {humidity}%")
 
-            if price is None:
-                print("No electricity prices found in database. Fetching prices...")
+                price = None
 
-                try:
-                    await fetch_electricity_price()
-                except Exception as e:
-                    await log_error(e)
-                    print(f"Electricity price fetch failed: {e}")
+                print("Retrieving current electricity price...")
 
-                print("Retrying current electricity price retrieval...")
                 try:
                     price = await get_current_electricity_price()
                 except Exception as e:
                     await log_error(e)
-                    print("Retry has failed.")
+                    print("Retrieving electricity price from database has failed.")
 
-            if price is None:
-                print("Running without API data.")
-                result = await determine_state_without_price(humidity)
+                # ---- block 1: download prices if missing ----
+                if price is None:
+                    print("No electricity prices found in database. Fetching prices...")
 
-            else: 
-                print(f"Price retrieved sucessfully: {price}")
+                    try:
+                        await fetch_electricity_price()
+                    except Exception as e:
+                        await log_error(e)
+                        print(f"Electricity price fetch failed: {e}")
 
-                result = await determine_state(
-                    humidity,
-                    price,
-                )
+                    print("Retrying current electricity price retrieval...")
+                    try:
+                        price = await get_current_electricity_price()
+                    except Exception as e:
+                        await log_error(e)
+                        print("Retry has failed.")
 
-                print(f"Price at timestamp {datetime.now()}: {price} DKK/kWh")
+                # ---- NEW: make a new threshold if the date changed ----
+                if price is not None:
+                    await refresh_threshold_if_needed()
 
-            if result["desired_state"] != result["current_state"]:
-                print("Changing Shelly state...")
+                # ---- block 2: decide ----
+                if price is None or app.state.threshold is None:
+                    print("Running without price or threshold data.")
+                    result = await determine_state_without_price(humidity)
 
-                shelly_result = await set_state(result["desired_state"])
-
-                print(f"set_state returned: {shelly_result!r}")
-
-                if shelly_result:
-                    await save_state(result["desired_state"], result["reason"])
-
-                    print(
-                        f"TURNED "
-                        f"{'ON' if result['desired_state'] else 'OFF'}: "
-                        f"{result['reason']}"
-                    )
                 else:
-                    print("Failed to change Shelly state.")
+                    print(f"Price retrieved sucessfully: {price}")
+
+                    result = await determine_state(
+                        humidity,
+                        price,
+                    )
+
+                    print(f"Price at timestamp {datetime.now()}: {price} DKK/kWh")
+
+                if result["desired_state"] != result["current_state"]:
+                    print("Changing Shelly state...")
+
+                    shelly_result = await set_state(result["desired_state"])
+
+                    print(f"set_state returned: {shelly_result!r}")
+
+                    if shelly_result:
+                        await save_state(result["desired_state"], result["reason"])
+
+                        print(
+                            f"TURNED "
+                            f"{'ON' if result['desired_state'] else 'OFF'}: "
+                            f"{result['reason']}"
+                        )
+                    else:
+                        print("Failed to change Shelly state.")
+
+
+
 
         except Exception as e:
             await log_error(e)
@@ -283,31 +326,37 @@ async def stop_server_based_loop():
     return True
 
 
-dht = adafruit_dht.DHT11(board.D4)
+async def dht11_feeder(interval=30, max_failures=5):
+    """Reads the local DHT11 every `interval` seconds and saves it
+    with source='dht11'. Only started when ENABLE_DHT11=true.
+    Safety (from main): if the sensor fails max_failures times in a
+    row, shut the plug off - a blind system must not keep running.
+    """
+    import board            # imported HERE (lazily), not at top of file, so
+    import adafruit_dht     # machines without the sensor (home) never touch it
+    dht = adafruit_dht.DHT11(board.D4)
 
-
-async def read_sensor(retries=5, delay=2):
-
-    for attempt in range(retries):
+    failures = 0
+    while True:
         try:
             humidity = dht.humidity
             temperature = dht.temperature
-
             if humidity is not None and temperature is not None:
-                print(
-                    f"Humidity: {humidity:.1f}% | " f"Temperature: {temperature:.1f} C"
-                )
-
-                await save_humidity(humidity, temperature)
-
-            return humidity, temperature
-
+                await save_humidity(humidity, temperature, source="dht11")
+                print(f"[dht11] {humidity:.1f}% {temperature:.1f}C")
+                failures = 0
+            else:
+                failures += 1
         except RuntimeError as e:
+            await log_error(e)      # DHT11 misreads often — just retry next cycle
+            failures += 1
+        except Exception as e:
             await log_error(e)
-            print(f"Reading failed: {e}")
+            failures += 1
 
-        if attempt < retries - 1:
-            time.sleep(delay)
-
-    await set_state(False)
-    raise RuntimeError("Failed to read DHT11 after multiple attempts. ")
+        if failures >= max_failures:
+            await set_state(False)
+            await log_error(
+                RuntimeError(f"DHT11 failed {failures} times in a row. Shutting off the plug."))
+            failures = 0
+        await asyncio.sleep(interval)
