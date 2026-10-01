@@ -131,7 +131,6 @@ async def save_state(state, reason):
                 (state, reason),
             )
 
-# in a server-based context, retrieves 
 async def get_daily_threshold(percentile=0.25, day=None):
 
     today = day or datetime.now(TIMEZONE).date()
@@ -217,12 +216,12 @@ async def get_current_humidity():
     for source in PRIORITY:
         row = await _latest_for_source(source)
         if row is None:
-            continue                       # this sensor never reported -> skip
+            continue                      
         percent, temperature, ts = row
         age = (now - ts).total_seconds()
         if age < MAX_AGE[source]:
-            return float(percent), source  # fresh enough -> trust it!
-    return None, None                      # nobody had a fresh reading
+            return float(percent), source  
+    return None, None                     
 
 async def get_dashboard_latest_reading():
     conn = await get_connection()

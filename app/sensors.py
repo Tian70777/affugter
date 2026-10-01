@@ -15,9 +15,7 @@ from datetime import datetime
 router = APIRouter()
 
 '''
-TODO: Rename
-
-Hosts endpoints for retrieval of Arduino data, including hard sensor readings and electricity prices
+Hosts endpoints for retrieval of sensor data and electricity prices
 Any changes in the state of the Shelly plug are also logged with reasoning and saved in the database
 '''
 

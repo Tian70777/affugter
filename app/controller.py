@@ -18,7 +18,6 @@ Server-based: The server runs its own loop, calling price API and receiving humi
 """
 
 MIN_HUMIDITY = 45
-# MAX_HUMIDITY = 55 ikke nyttig?
 EMERGENCY_THRESHOLD = 70
 
 DARK_TIME_SLEEP = 22
@@ -326,8 +325,8 @@ async def dht11_feeder(interval=30, max_failures=5):
     Safety (from main): if the sensor fails max_failures times in a
     row, shut the plug off - a blind system must not keep running.
     """
-    import board            # imported HERE (lazily), not at top of file, so
-    import adafruit_dht     # machines without the sensor (home) never touch it
+    import board           
+    import adafruit_dht     
     dht = adafruit_dht.DHT11(board.D4)
 
     failures = 0
@@ -342,7 +341,7 @@ async def dht11_feeder(interval=30, max_failures=5):
             else:
                 failures += 1
         except RuntimeError as e:
-            await log_error(e)      # DHT11 misreads often — just retry next cycle
+            await log_error(e)      
             failures += 1
         except Exception as e:
             await log_error(e)

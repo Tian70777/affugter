@@ -1,5 +1,3 @@
-# app/electricity.py
-
 import httpx
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
