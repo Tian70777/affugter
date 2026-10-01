@@ -1,6 +1,11 @@
 .env
 venv/
 __pycache__/
-*.py[cod]O
+*.py[cod]
 
 .idea/
+# LibreOffice lock files
+.~lock.*#
+
+# Microsoft Office temp files
+~$*
