@@ -1,4 +1,3 @@
-
 from .database import (
     save_state,
     get_latest_humidity,

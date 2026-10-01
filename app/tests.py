@@ -1,11 +1,9 @@
 import asyncio
-import sys
-import httpx
 
 '''
 Test index for debug commands 
-High price: sends a false value of 2 DKKR/kWh to simulate excessive electricity price
-Low price: sends a false value of 0.01 DKKR/kWh to simulate excessively cheap electricity price
+High price: sends a false value of 100 DKKR/kWh to simulate excessive electricity price
+Low price: sends a false value of 0.10 DKKR/kWh to simulate excessively cheap electricity price
 High humidity: sends a false value of 100% humidity
 Low humidity: sends a false value of 0% humidity
 Real: resets all values to latest stored real values in the database

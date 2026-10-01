@@ -1,4 +1,3 @@
-# app/main.py
 import os
 import asyncio
 from contextlib import asynccontextmanager
